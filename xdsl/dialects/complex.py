@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import abc
-from typing import ClassVar, cast
+from collections.abc import Sequence
+from typing import ClassVar, Generic, cast
+
+from typing_extensions import TypeVar
 
 from xdsl.dialects.arith import FastMathFlagsAttr
 from xdsl.dialects.builtin import (
-    AnyAttr,
     AnyFloat,
     AnyFloatConstr,
     ArrayAttr,
@@ -14,27 +16,102 @@ from xdsl.dialects.builtin import (
     FloatAttr,
     IntegerAttr,
     IntegerType,
-    ParamAttrConstraint,
 )
 from xdsl.interfaces import ConstantLikeInterface
-from xdsl.ir import Attribute, Dialect, Operation, SSAValue
+from xdsl.ir import (
+    Attribute,
+    Dialect,
+    Operation,
+    ParametrizedAttribute,
+    SSAValue,
+)
 from xdsl.irdl import (
+    AnyAttr,
     AnyOf,
     EqIntConstraint,
     IRDLOperation,
+    ParamAttrConstraint,
     RangeOf,
     VarConstraint,
     base,
+    irdl_attr_definition,
     irdl_op_definition,
     operand_def,
     prop_def,
     result_def,
     traits_def,
 )
+from xdsl.parser import AttrParser
+from xdsl.printer import Printer
 from xdsl.traits import Pure
 from xdsl.utils.exceptions import VerifyException
+from xdsl.utils.hints import isa
 
 ComplexTypeConstr = ComplexType.constr(AnyFloat)
+
+_ComplexNumberElementType = TypeVar(
+    "_ComplexNumberElementType",
+    bound=AnyFloat,
+    covariant=True,
+    default=AnyFloat,
+)
+
+
+@irdl_attr_definition
+class ComplexNumberAttr(ParametrizedAttribute, Generic[_ComplexNumberElementType]):
+    name = "complex.number"
+
+    real: FloatAttr[_ComplexNumberElementType]
+    imag: FloatAttr[_ComplexNumberElementType]
+    complex_type: ComplexType[_ComplexNumberElementType]
+
+    def __init__(
+        self,
+        real: FloatAttr[_ComplexNumberElementType],
+        imag: FloatAttr[_ComplexNumberElementType],
+        type: ComplexType[_ComplexNumberElementType],
+    ):
+        super().__init__(real, imag, type)
+
+    @staticmethod
+    def from_floats(value: tuple[float, float], type: AnyFloat) -> ComplexNumberAttr:
+        return ComplexNumberAttr(
+            FloatAttr(value[0], type), FloatAttr(value[1], type), ComplexType(type)
+        )
+
+    def print_parameters(self, printer: Printer) -> None:
+        with printer.in_angle_brackets():
+            printer.print_string(
+                f":{self.complex_type.element_type} {self.real.value.data}, {self.imag.value.data}"
+            )
+        printer.print_string(f" : {self.complex_type}")
+
+    @classmethod
+    def parse_parameters(cls, parser: AttrParser) -> Sequence[Attribute]:
+        """
+        Example:
+        ```mlir
+        #complex.number<:f64 1.0, 2.0>
+        #complex.number<:f64 1.0, 2.0> : complex<f64>
+        ```
+        """
+        with parser.in_angle_brackets():
+            parser.parse_punctuation(":")
+            assert isa(element_type := parser.parse_type(), AnyFloat)
+            real = FloatAttr(parser.parse_float(), element_type)
+            parser.parse_punctuation(",")
+            imag = FloatAttr(parser.parse_float(), element_type)
+        if parser.parse_optional_punctuation(":"):
+            assert isa(
+                (complex_type := parser.parse_optional_attribute()),
+                ComplexType[AnyFloat],
+            )
+            assert complex_type.element_type == element_type
+        return [
+            real,
+            imag,
+            ComplexType(element_type),
+        ]
 
 
 class ComplexUnaryComplexResultOperation(IRDLOperation, abc.ABC):
@@ -383,5 +460,8 @@ Complex = Dialect(
         SubOp,
         TanOp,
         TanhOp,
+    ],
+    [
+        ComplexNumberAttr,
     ],
 )

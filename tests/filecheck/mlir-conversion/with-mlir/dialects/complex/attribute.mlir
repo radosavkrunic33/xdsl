@@ -1,0 +1,20 @@
+// RUN: MLIR_GENERIC_ROUNDTRIP
+// RUN: MLIR_ROUNDTRIP
+
+func.func @number_attr_f64() {
+  // CHECK: "test.op"() {attr = #complex.number<:f64 1.0, 0.0> : complex<f64>} : () -> ()
+  "test.op"() {
+    attr = #complex.number<:f64 1.0, 0.0>
+  } : () -> ()
+  
+  return
+}
+
+func.func @number_attr_f32() {
+  // CHECK: "test.op"() {attr = #complex.number<:f32 1.0, 0.0> : complex<f32>} : () -> ()
+  "test.op"() {
+    attr = #complex.number<:f32 1.0, 0.0>
+  } : () -> ()
+
+  return
+}
